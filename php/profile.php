@@ -13,33 +13,33 @@ if (empty($user_id) || empty($session_token)) {
     exit();
 }
 
-// 1. Validate session with Redis first, fallback to PHP session
+// 1. Validate session with MySQL database
 $is_authorized = false;
-$redis_available = false;
 
-try {
-    if (class_exists('Redis')) {
-        $redis = new Redis();
-        if (@$redis->connect('127.0.0.1', 6379, 1)) {
-            $redis_available = true;
-            $stored_id = $redis->get("session:" . $session_token);
-            if ($stored_id && $stored_id == $user_id) {
-                $is_authorized = true;
-            }
-        }
-    }
-} catch (Throwable $e) {
-    // Redis unavailable, fallback to PHP session
-}
+// Database connection using MYSQL_PUBLIC_URL
+$db_url = getenv("MYSQL_PUBLIC_URL");
+$url_parts = parse_url($db_url);
 
-if (!$redis_available) {
-    // Fallback to PHP session if Redis wasn't successful
-    session_start();
-    if (isset($_SESSION['user_id']) && isset($_SESSION['session_token'])) {
-        if ($_SESSION['user_id'] == $user_id && $_SESSION['session_token'] == $session_token) {
+$host = !empty($url_parts['host']) ? $url_parts['host'] : '127.0.0.1';
+$user = !empty($url_parts['user']) ? $url_parts['user'] : 'root';
+$pass = $url_parts['pass'] ?? '';
+$db = !empty($url_parts['path']) ? ltrim($url_parts['path'], '/') : 'student_auth_db';
+$port = !empty($url_parts['port']) ? $url_parts['port'] : 3306;
+
+$conn = @new mysqli($host, $user, $pass, $db, $port);
+
+if (!$conn->connect_error) {
+    $stmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND session_token = ?");
+    if ($stmt) {
+        $stmt->bind_param("is", $user_id, $session_token);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result->num_rows > 0) {
             $is_authorized = true;
         }
+        $stmt->close();
     }
+    $conn->close();
 }
 
 if (!$is_authorized) {

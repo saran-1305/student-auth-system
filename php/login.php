@@ -2,45 +2,35 @@
 // login.php
 header('Content-Type: application/json');
 
-// Handle logout action
-if(isset($_POST['action']) && $_POST['action'] == 'logout') {
-    if(isset($_POST['session_token'])) {
-        $token = $_POST['session_token'];
-        // connect to redis to remove session
-        try {
-            if (class_exists('Redis')) {
-                $redis = new Redis();
-                if (@$redis->connect('127.0.0.1', 6379, 1)) {
-                    $redis->del("session:" . $token);
-                }
-            }
-        } catch (Throwable $e) {
-            // just ignore if redis fails
-        }
-    }
-    
-    // Fallback: clear PHP session
-    session_start();
-    session_destroy();
-
-    echo json_encode(["status" => "success", "message" => "Logged out"]);
-    exit();
-}
-
 // Database connection using MYSQL_PUBLIC_URL
 $db_url = getenv("MYSQL_PUBLIC_URL");
 $url_parts = parse_url($db_url);
 
-$host = $url_parts['host'];
-$user = $url_parts['user'];
-$pass = $url_parts['pass'];
-$db = ltrim($url_parts['path'], '/');
-$port = $url_parts['port'];
+$host = !empty($url_parts['host']) ? $url_parts['host'] : '127.0.0.1';
+$user = !empty($url_parts['user']) ? $url_parts['user'] : 'root';
+$pass = $url_parts['pass'] ?? '';
+$db = !empty($url_parts['path']) ? ltrim($url_parts['path'], '/') : 'student_auth_db';
+$port = !empty($url_parts['port']) ? $url_parts['port'] : 3306;
 
 $conn = @new mysqli($host, $user, $pass, $db, $port);
 
 if ($conn->connect_error) {
     echo json_encode(["status" => "error", "message" => "Database connection failed"]);
+    exit();
+}
+
+// Handle logout action
+if(isset($_POST['action']) && $_POST['action'] == 'logout') {
+    if(isset($_POST['session_token'])) {
+        $token = $_POST['session_token'];
+        $stmt = $conn->prepare("UPDATE users SET session_token = NULL WHERE session_token = ?");
+        $stmt->bind_param("s", $token);
+        $stmt->execute();
+        $stmt->close();
+    }
+    
+    echo json_encode(["status" => "success", "message" => "Logged out"]);
+    $conn->close();
     exit();
 }
 
@@ -64,28 +54,12 @@ if(isset($_POST['email']) && isset($_POST['password'])) {
             // Create a random session token
             $session_token = bin2hex(random_bytes(16)); 
             
-            $used_redis = false;
-            try {
-                if (class_exists('Redis')) {
-                    $redis = new Redis();
-                    // Connect with short timeout
-                    if (@$redis->connect('127.0.0.1', 6379, 1)) {
-                        // Store token in redis with user_id as value, expires in 1 hour
-                        $redis->setex("session:" . $session_token, 3600, $user_id);
-                        $used_redis = true;
-                    }
-                }
-            } catch(Throwable $e) {
-                // Redis unavailable, fallback to PHP session
-            }
+            // Save token to database
+            $update_stmt = $conn->prepare("UPDATE users SET session_token = ? WHERE id = ?");
+            $update_stmt->bind_param("si", $session_token, $user_id);
+            $update_stmt->execute();
+            $update_stmt->close();
 
-            // Fallback to PHP session
-            if (!$used_redis) {
-                session_start();
-                $_SESSION['user_id'] = $user_id;
-                $_SESSION['session_token'] = $session_token;
-            }
-            
             echo json_encode([
                 "status" => "success", 
                 "user_id" => $user_id,

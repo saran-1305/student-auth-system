@@ -6,11 +6,11 @@ header('Content-Type: application/json');
 $db_url = getenv("MYSQL_PUBLIC_URL");
 $url_parts = parse_url($db_url);
 
-$host = $url_parts['host'];
-$user = $url_parts['user'];
-$pass = $url_parts['pass'];
-$db = ltrim($url_parts['path'], '/');
-$port = $url_parts['port'];
+$host = !empty($url_parts['host']) ? $url_parts['host'] : '127.0.0.1';
+$user = !empty($url_parts['user']) ? $url_parts['user'] : 'root';
+$pass = $url_parts['pass'] ?? '';
+$db = !empty($url_parts['path']) ? ltrim($url_parts['path'], '/') : 'student_auth_db';
+$port = !empty($url_parts['port']) ? $url_parts['port'] : 3306;
 
 $conn = @new mysqli($host, $user, $pass, $db, $port);
 
