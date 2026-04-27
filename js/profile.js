@@ -66,7 +66,7 @@ $(document).ready(function() {
             error: function(xhr, status, error) {
                 var msgDiv = $('#message');
                 msgDiv.removeClass('alert-success').addClass('alert-danger');
-                msgDiv.text('An error occurred. Please try again.').show();
+                msgDiv.text('AJAX Error: ' + error + ' | Response: ' + xhr.responseText).show();
             }
         });
     });

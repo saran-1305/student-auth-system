@@ -38,41 +38,41 @@ if (empty($user_id) || empty($session_token)) {
 // 1. Validate session with Upstash Redis
 $is_authorized = false;
 
-$stored_user_id = getSession($session_token);
-if ($stored_user_id !== null && $stored_user_id == $user_id) {
-    $is_authorized = true;
-}
-
-// if (!$is_authorized) {
-//     echo json_encode(["status" => "error", "message" => "Unauthorized"]);
-//     exit();
-// }
-
 // 2. Handle actions
-require_once __DIR__ . '/../vendor/autoload.php';
-
-$mongoClient = new MongoDB\Client("mongodb+srv://saran:saran130507@cluster0.8jpaw5j.mongodb.net/?appName=Cluster0");
-$profilesCollection = $mongoClient->user_auth->profiles;
-
-if ($action == 'get_profile') {
-    $profile = $profilesCollection->findOne(['user_id' => $user_id]);
-    
-    if ($profile) {
-        $data = [
-            'age' => $profile['age'] ?? '',
-            'dob' => $profile['dob'] ?? '',
-            'contact' => $profile['contact'] ?? ''
-        ];
-        echo json_encode(["status" => "success", "data" => $data]);
-    } else {
-        echo json_encode(["status" => "success", "data" => null]);
+try {
+    $stored_user_id = getSession($session_token);
+    if ($stored_user_id !== null && $stored_user_id == $user_id) {
+        $is_authorized = true;
     }
-} else if ($action == 'update_profile') {
-    $age = $_POST['age'] ?? '';
-    $dob = $_POST['dob'] ?? '';
-    $contact = $_POST['contact'] ?? '';
 
-    try {
+    if (!$is_authorized) {
+        echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+        exit();
+    }
+
+    require_once __DIR__ . '/../vendor/autoload.php';
+
+    $mongoClient = new MongoDB\Client("mongodb+srv://saran:saran130507@cluster0.8jpaw5j.mongodb.net/?appName=Cluster0");
+    $profilesCollection = $mongoClient->user_auth->profiles;
+
+    if ($action == 'get_profile') {
+        $profile = $profilesCollection->findOne(['user_id' => $user_id]);
+        
+        if ($profile) {
+            $data = [
+                'age' => $profile['age'] ?? '',
+                'dob' => $profile['dob'] ?? '',
+                'contact' => $profile['contact'] ?? ''
+            ];
+            echo json_encode(["status" => "success", "data" => $data]);
+        } else {
+            echo json_encode(["status" => "success", "data" => null]);
+        }
+    } else if ($action == 'update_profile') {
+        $age = $_POST['age'] ?? '';
+        $dob = $_POST['dob'] ?? '';
+        $contact = $_POST['contact'] ?? '';
+
         $profilesCollection->updateOne(
             ['user_id' => $user_id],
             ['$set' => [
@@ -84,7 +84,7 @@ if ($action == 'get_profile') {
             ['upsert' => true]
         );
         echo json_encode(["status" => "success", "message" => "Profile saved!"]);
-    } catch (\Throwable $e) {
-        echo json_encode(["status" => "error", "message" => "DB Error: " . $e->getMessage()]);
     }
+} catch (\Throwable $e) {
+    echo json_encode(["status" => "error", "message" => "DB Error: " . $e->getMessage()]);
 }
