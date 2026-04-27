@@ -13,22 +13,38 @@ if (empty($user_id) || empty($session_token)) {
     exit();
 }
 
-// 1. Validate session with Redis first
+// 1. Validate session with Redis first, fallback to PHP session
+$is_authorized = false;
+$redis_available = false;
+
 try {
     if (class_exists('Redis')) {
         $redis = new Redis();
-        $redis->connect('127.0.0.1', 6379);
-
-        // Check if key exists
-        $stored_id = $redis->get("session:" . $session_token);
-
-        if (!$stored_id || $stored_id != $user_id) {
-            echo json_encode(["status" => "error", "message" => "Unauthorized"]);
-            exit();
+        if (@$redis->connect('127.0.0.1', 6379, 1)) {
+            $redis_available = true;
+            $stored_id = $redis->get("session:" . $session_token);
+            if ($stored_id && $stored_id == $user_id) {
+                $is_authorized = true;
+            }
         }
     }
 } catch (Throwable $e) {
-    // If Redis fails or is unavailable, skip validation and continue execution (fallback mode)
+    // Redis unavailable, fallback to PHP session
+}
+
+if (!$redis_available) {
+    // Fallback to PHP session if Redis wasn't successful
+    session_start();
+    if (isset($_SESSION['user_id']) && isset($_SESSION['session_token'])) {
+        if ($_SESSION['user_id'] == $user_id && $_SESSION['session_token'] == $session_token) {
+            $is_authorized = true;
+        }
+    }
+}
+
+if (!$is_authorized) {
+    echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+    exit();
 }
 
 // 2. Connect to MongoDB using composer autoloader

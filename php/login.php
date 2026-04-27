@@ -10,13 +10,19 @@ if(isset($_POST['action']) && $_POST['action'] == 'logout') {
         try {
             if (class_exists('Redis')) {
                 $redis = new Redis();
-                $redis->connect('127.0.0.1', 6379);
-                $redis->del("session:" . $token);
+                if (@$redis->connect('127.0.0.1', 6379, 1)) {
+                    $redis->del("session:" . $token);
+                }
             }
         } catch (Throwable $e) {
-            // just ignore if redis fails on logout
+            // just ignore if redis fails
         }
     }
+    
+    // Fallback: clear PHP session
+    session_start();
+    session_destroy();
+
     echo json_encode(["status" => "success", "message" => "Logged out"]);
     exit();
 }
@@ -58,26 +64,33 @@ if(isset($_POST['email']) && isset($_POST['password'])) {
             // Create a random session token
             $session_token = bin2hex(random_bytes(16)); 
             
-            // Connect to Redis to store session
-            if (!class_exists('Redis')) {
-                echo json_encode(["status" => "error", "message" => "Redis extension is not installed in PHP. Ensure it is enabled in php.ini."]);
-                exit();
+            $used_redis = false;
+            try {
+                if (class_exists('Redis')) {
+                    $redis = new Redis();
+                    // Connect with short timeout
+                    if (@$redis->connect('127.0.0.1', 6379, 1)) {
+                        // Store token in redis with user_id as value, expires in 1 hour
+                        $redis->setex("session:" . $session_token, 3600, $user_id);
+                        $used_redis = true;
+                    }
+                }
+            } catch(Throwable $e) {
+                // Redis unavailable, fallback to PHP session
             }
 
-            try {
-                $redis = new Redis();
-                $redis->connect('127.0.0.1', 6379);
-                // Store token in redis with user_id as value, expires in 1 hour (3600 secs)
-                $redis->setex("session:" . $session_token, 3600, $user_id);
-                
-                echo json_encode([
-                    "status" => "success", 
-                    "user_id" => $user_id,
-                    "session_token" => $session_token
-                ]);
-            } catch(Throwable $e) {
-                echo json_encode(["status" => "error", "message" => "Redis connection failed: " . $e->getMessage()]);
+            // Fallback to PHP session
+            if (!$used_redis) {
+                session_start();
+                $_SESSION['user_id'] = $user_id;
+                $_SESSION['session_token'] = $session_token;
             }
+            
+            echo json_encode([
+                "status" => "success", 
+                "user_id" => $user_id,
+                "session_token" => $session_token
+            ]);
             
         } else {
             echo json_encode(["status" => "error", "message" => "Incorrect password"]);
