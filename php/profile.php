@@ -39,7 +39,6 @@ if (!$conn->connect_error) {
         }
         $stmt->close();
     }
-    $conn->close();
 }
 
 if (!$is_authorized) {
@@ -47,73 +46,44 @@ if (!$is_authorized) {
     exit();
 }
 
-// 2. Connect to MongoDB using composer autoloader
-// Assuming standard student setup where composer vendor is in the root or php folder
-$autoload_path = __DIR__ . '/../vendor/autoload.php';
-if (file_exists($autoload_path)) {
-    require_once $autoload_path;
-} else if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-    require_once __DIR__ . '/vendor/autoload.php';
-} else {
-    echo json_encode(["status" => "error", "message" => "MongoDB library not found. Run 'composer require mongodb/mongodb'"]);
-    exit();
-}
-
-// 3. Check for PHP MongoDB Extension
-if (!extension_loaded('mongodb')) {
-    echo json_encode(["status" => "error", "message" => "PHP MongoDB extension (php_mongodb.dll) is missing. Please install it in XAMPP and enable it in php.ini."]);
-    exit();
-}
-
-try {
-    // connect to local mongodb
-    $mongoClient = new MongoDB\Client("mongodb+srv://saran:saran130507@cluster0.8jpaw5j.mongodb.net/?appName=Cluster0");
-    $collection = $mongoClient->user_auth->profiles;
-} catch (Exception $e) {
-    echo json_encode(["status" => "error", "message" => "MongoDB connection error."]);
-    exit();
-}
-
-// 3. Handle actions
+// 2. Handle actions
 if ($action == 'get_profile') {
-    // Find profile using user_id
-    $profile = $collection->findOne(['user_id' => $user_id]);
-
-    if ($profile) {
-        // Return existing data
+    $stmt = $conn->prepare("SELECT age, dob, contact FROM users WHERE id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
         $data = [
-            'age' => $profile['age'] ?? '',
-            'dob' => $profile['dob'] ?? '',
-            'contact' => $profile['contact'] ?? ''
+            'age' => $row['age'] ?? '',
+            'dob' => $row['dob'] ?? '',
+            'contact' => $row['contact'] ?? ''
         ];
         echo json_encode(["status" => "success", "data" => $data]);
     } else {
-        // user hasn't set profile yet
         echo json_encode(["status" => "success", "data" => null]);
     }
+    $stmt->close();
 } else if ($action == 'update_profile') {
     $age = $_POST['age'] ?? '';
     $dob = $_POST['dob'] ?? '';
     $contact = $_POST['contact'] ?? '';
 
-    // Update or Insert into mongo collection
-    try {
-        $updateResult = $collection->updateOne(
-            ['user_id' => $user_id], // search criteria
-            [
-                '$set' => [             // new data
-                    'age' => $age,
-                    'dob' => $dob,
-                    'contact' => $contact
-                ]
-            ],
-            ['upsert' => true] // create if not exists
-        );
-
-        // Give a success response regardless if they modified it or just saved the exact same data
-        echo json_encode(["status" => "success", "message" => "Profile saved!"]);
-    } catch (Exception $e) {
-        echo json_encode(["status" => "error", "message" => "Error saving profile."]);
+    $stmt = $conn->prepare("UPDATE users SET age=?, dob=?, contact=? WHERE id=?");
+    if ($stmt) {
+        $stmt->bind_param("sssi", $age, $dob, $contact, $user_id);
+        
+        if ($stmt->execute()) {
+            echo json_encode(["status" => "success", "message" => "Profile saved!"]);
+        } else {
+            echo json_encode(["status" => "error", "message" => "Error saving profile."]);
+        }
+        $stmt->close();
+    } else {
+        echo json_encode(["status" => "error", "message" => "Database error."]);
     }
 }
+
+$conn->close();
 ?>
