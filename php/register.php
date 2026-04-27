@@ -2,14 +2,18 @@
 // register.php
 header('Content-Type: application/json');
 
-// MySQL Connection settings
-$db_host = 'localhost';
-$db_user = 'root'; // default xampp/wamp user
-$db_pass = '';
-$db_name = 'student_auth_db';
+// Database connection using MYSQL_PUBLIC_URL
+$db_url = getenv("MYSQL_PUBLIC_URL");
+$url_parts = parse_url($db_url);
 
-// Create connection
-$conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
+$host = $url_parts['host'];
+$user = $url_parts['user'];
+$pass = $url_parts['pass'];
+$db = ltrim($url_parts['path'], '/');
+$port = $url_parts['port'];
+
+$conn = @new mysqli($host, $user, $pass, $db, $port);
+
 if ($conn->connect_error) {
     echo json_encode(["status" => "error", "message" => "Database connection failed"]);
     exit();

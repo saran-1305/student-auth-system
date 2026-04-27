@@ -21,10 +21,20 @@ if(isset($_POST['action']) && $_POST['action'] == 'logout') {
     exit();
 }
 
-// Database Connection
-$conn = new mysqli('localhost', 'root', '', 'student_auth_db');
+// Database connection using MYSQL_PUBLIC_URL
+$db_url = getenv("MYSQL_PUBLIC_URL");
+$url_parts = parse_url($db_url);
+
+$host = $url_parts['host'];
+$user = $url_parts['user'];
+$pass = $url_parts['pass'];
+$db = ltrim($url_parts['path'], '/');
+$port = $url_parts['port'];
+
+$conn = @new mysqli($host, $user, $pass, $db, $port);
+
 if ($conn->connect_error) {
-    echo json_encode(["status" => "error", "message" => "DB Error"]);
+    echo json_encode(["status" => "error", "message" => "Database connection failed"]);
     exit();
 }
 
