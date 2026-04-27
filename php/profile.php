@@ -2,6 +2,26 @@
 // profile.php
 header('Content-Type: application/json');
 
+function getSession($session_token) {
+    $url = 'https://sterling-gecko-97057.upstash.io/get/session:' . $session_token;
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer gQAAAAAAAXshAAIgcDFhYjBlMDI0MzA5NWU0ZjM5OWM4MDU5MWE0YmEwMDU0MQ"
+    ]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    if ($response) {
+        $data = json_decode($response, true);
+        if (isset($data['result']) && $data['result'] !== null) {
+            return $data['result'];
+        }
+    }
+    return null;
+}
+
 // get inputs
 // Note: $_REQUEST is used for fetching both GET and POST for simplicity in this student project
 $user_id = isset($_REQUEST['user_id']) ? $_REQUEST['user_id'] : '';
@@ -13,32 +33,12 @@ if (empty($user_id) || empty($session_token)) {
     exit();
 }
 
-// 1. Validate session with MySQL database
+// 1. Validate session with Upstash Redis
 $is_authorized = false;
 
-// Database connection using MYSQL_PUBLIC_URL
-$db_url = getenv("MYSQL_PUBLIC_URL");
-$url_parts = parse_url($db_url);
-
-$host = !empty($url_parts['host']) ? $url_parts['host'] : '127.0.0.1';
-$user = !empty($url_parts['user']) ? $url_parts['user'] : 'root';
-$pass = $url_parts['pass'] ?? '';
-$db = !empty($url_parts['path']) ? ltrim($url_parts['path'], '/') : 'student_auth_db';
-$port = !empty($url_parts['port']) ? $url_parts['port'] : 3306;
-
-$conn = @new mysqli($host, $user, $pass, $db, $port);
-
-if (!$conn->connect_error) {
-    $stmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND session_token = ?");
-    if ($stmt) {
-        $stmt->bind_param("is", $user_id, $session_token);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        if ($result->num_rows > 0) {
-            $is_authorized = true;
-        }
-        $stmt->close();
-    }
+$stored_user_id = getSession($session_token);
+if ($stored_user_id !== null && $stored_user_id == $user_id) {
+    $is_authorized = true;
 }
 
 if (!$is_authorized) {
@@ -47,43 +47,43 @@ if (!$is_authorized) {
 }
 
 // 2. Handle actions
+require_once __DIR__ . '/../vendor/autoload.php';
+
+$mongoClient = new MongoDB\Client("mongodb+srv://saran:saran130507@cluster0.8jpaw5j.mongodb.net/?appName=Cluster0");
+$profilesCollection = $mongoClient->user_auth->profiles;
+
 if ($action == 'get_profile') {
-    $stmt = $conn->prepare("SELECT age, dob, contact FROM users WHERE id = ?");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $profile = $profilesCollection->findOne(['user_id' => $user_id]);
     
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
+    if ($profile) {
         $data = [
-            'age' => $row['age'] ?? '',
-            'dob' => $row['dob'] ?? '',
-            'contact' => $row['contact'] ?? ''
+            'age' => $profile['age'] ?? '',
+            'dob' => $profile['dob'] ?? '',
+            'contact' => $profile['contact'] ?? ''
         ];
         echo json_encode(["status" => "success", "data" => $data]);
     } else {
         echo json_encode(["status" => "success", "data" => null]);
     }
-    $stmt->close();
 } else if ($action == 'update_profile') {
     $age = $_POST['age'] ?? '';
     $dob = $_POST['dob'] ?? '';
     $contact = $_POST['contact'] ?? '';
 
-    $stmt = $conn->prepare("UPDATE users SET age=?, dob=?, contact=? WHERE id=?");
-    if ($stmt) {
-        $stmt->bind_param("sssi", $age, $dob, $contact, $user_id);
-        
-        if ($stmt->execute()) {
-            echo json_encode(["status" => "success", "message" => "Profile saved!"]);
-        } else {
-            echo json_encode(["status" => "error", "message" => "Error saving profile."]);
-        }
-        $stmt->close();
-    } else {
+    try {
+        $profilesCollection->updateOne(
+            ['user_id' => $user_id],
+            ['$set' => [
+                'user_id' => $user_id,
+                'age' => $age,
+                'dob' => $dob,
+                'contact' => $contact
+            ]],
+            ['upsert' => true]
+        );
+        echo json_encode(["status" => "success", "message" => "Profile saved!"]);
+    } catch (Exception $e) {
         echo json_encode(["status" => "error", "message" => "Database error."]);
     }
 }
-
-$conn->close();
 ?>

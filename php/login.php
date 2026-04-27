@@ -2,6 +2,30 @@
 // login.php
 header('Content-Type: application/json');
 
+function setSession($session_token, $user_id) {
+    $url = 'https://sterling-gecko-97057.upstash.io/set/session:' . $session_token . '/' . $user_id;
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer gQAAAAAAAXshAAIgcDFhYjBlMDI0MzA5NWU0ZjM5OWM4MDU5MWE0YmEwMDU0MQ"
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+function deleteSession($session_token) {
+    $url = 'https://sterling-gecko-97057.upstash.io/del/session:' . $session_token;
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer gQAAAAAAAXshAAIgcDFhYjBlMDI0MzA5NWU0ZjM5OWM4MDU5MWE0YmEwMDU0MQ"
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 // Database connection using MYSQL_PUBLIC_URL
 $db_url = getenv("MYSQL_PUBLIC_URL");
 $url_parts = parse_url($db_url);
@@ -23,10 +47,7 @@ if ($conn->connect_error) {
 if(isset($_POST['action']) && $_POST['action'] == 'logout') {
     if(isset($_POST['session_token'])) {
         $token = $_POST['session_token'];
-        $stmt = $conn->prepare("UPDATE users SET session_token = NULL WHERE session_token = ?");
-        $stmt->bind_param("s", $token);
-        $stmt->execute();
-        $stmt->close();
+        deleteSession($token);
     }
     
     echo json_encode(["status" => "success", "message" => "Logged out"]);
@@ -54,11 +75,8 @@ if(isset($_POST['email']) && isset($_POST['password'])) {
             // Create a random session token
             $session_token = bin2hex(random_bytes(16)); 
             
-            // Save token to database
-            $update_stmt = $conn->prepare("UPDATE users SET session_token = ? WHERE id = ?");
-            $update_stmt->bind_param("si", $session_token, $user_id);
-            $update_stmt->execute();
-            $update_stmt->close();
+            // Save token to Upstash Redis
+            setSession($session_token, $user_id);
 
             echo json_encode([
                 "status" => "success", 
