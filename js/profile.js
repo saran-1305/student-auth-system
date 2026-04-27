@@ -8,6 +8,9 @@ $(document).ready(function() {
         window.location.href = 'login.html';
     }
 
+    // Display user ID on the UI
+    $('#displayUserId').text(user_id);
+
     // load previous profile data on page load
     $.ajax({
         url: 'php/profile.php',
